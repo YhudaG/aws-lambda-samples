@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'imagedetection
+
+  Sample SAM Template for imagedetection
+
+  '
+Globals:
+  Function:
+    Timeout: 20
+    MemorySize: 512
+Resources:
+  ImagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName:
+        Fn::Sub: ${AWS::StackName}-${AWS::AccountId}-${AWS::Region}
+  ImageDetectionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ImageDetectionFunction
+      Handler: imagedetection.App::handleRequest
+      Runtime: java11
+      Architectures:
+      - x86_64
+      Policies:
+      - S3ReadPolicy:
+          BucketName:
+            Fn::Sub: ${AWS::StackName}-${AWS::AccountId}-${AWS::Region}
+      Environment:
+        Variables:
+          JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+      Events:
+        S3Event:
+          Type: S3
+          Properties:
+            Bucket:
+              Ref: ImagesBucket
+            Events: s3:ObjectCreated:*
+    Metadata:
+      SamResourceId: ImageDetectionFunction

@@ -1,0 +1,7 @@
+
+`	java:S112%"FDefine and throw a dedicated exception instead of using a generic one.(Ò‚Òéüÿÿÿÿ
+t	java:S120"ZRename this package name to match the regular expression '^[a-z_]+(\.[a-z_][a-z0-9_]*)*$'.(ç½¦ìýÿÿÿÿ
+U
+java:S6213":Rename this variable to not match a restricted identifier.(Þ•„¦üÿÿÿÿ
+n
+java:S2139#"XEither log this exception and handle it, or rethrow it with some contextual information.(ï­£Ä

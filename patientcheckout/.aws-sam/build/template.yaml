@@ -1,0 +1,134 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'patientcheckout
+
+  SAM Template for patientcheckout
+
+  '
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: java11
+    MemorySize: 512
+    Environment:
+      Variables:
+        PATIENT_CHECKOUT_TABLE:
+          Ref: PatientCheckoutTable
+        PATIENT_CHECKOUT_TOPIC:
+          Ref: PatientCheckoutTopic
+        PATIENT_CHECKOUT_DLQ:
+          Ref: PatientCheckoutDLQ
+Resources:
+  PatientCheckoutBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName:
+        Fn::Sub: ${AWS::StackName}-${AWS::AccountId}-${AWS::Region}
+  PatientCheckoutTopic:
+    Type: AWS::SNS::Topic
+  PatientCheckoutDLQ:
+    Type: AWS::SQS::Queue
+  PatientCheckoutTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Type: Number
+        Name: id
+  PatientCheckoutAPI:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: PatientCheckoutAPI
+      Handler: lambdaFunction.lambda.PatientCheckoutAPI::handler
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: PatientCheckoutTable
+      - SNSPublishMessagePolicy:
+          TopicName:
+            Fn::GetAtt:
+            - PatientCheckoutTopic
+            - TopicName
+      - SQSSendMessagePolicy:
+          QueueName:
+            Fn::GetAtt:
+            - PatientCheckoutDLQ
+            - QueueName
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /patient-checkout
+            Method: POST
+    Metadata:
+      SamResourceId: PatientCheckoutAPI
+  PatientCheckoutFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: PatientCheckoutFunction
+      Handler: lambdaFunction.lambda.PatientCheckoutLambda::handler
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn:
+          Fn::GetAtt:
+          - PatientCheckoutDLQ
+          - Arn
+      Policies:
+      - S3ReadPolicy:
+          BucketName:
+            Fn::Sub: ${AWS::StackName}-${AWS::AccountId}-${AWS::Region}
+      - SNSPublishMessagePolicy:
+          TopicName:
+            Fn::GetAtt:
+            - PatientCheckoutTopic
+            - TopicName
+      Environment:
+        Variables:
+          JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+      Events:
+        S3Event:
+          Type: S3
+          Properties:
+            Bucket:
+              Ref: PatientCheckoutBucket
+            Events: s3:ObjectCreated:*
+    Metadata:
+      SamResourceId: PatientCheckoutFunction
+  BillManagementFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: BillManagementFunction
+      Handler: lambdaFunction.lambda.BillManagementLambda::handler
+      Environment:
+        Variables:
+          JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+      Events:
+        SNSEvent:
+          Type: SNS
+          Properties:
+            Topic:
+              Ref: PatientCheckoutTopic
+    Metadata:
+      SamResourceId: BillManagementFunction
+  ErrorHandlingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ErrorHandlingFunction
+      Handler: lambdaFunction.errorHandling.ErrorHandler::handler
+      Environment:
+        Variables:
+          JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+      Policies:
+      - S3ReadPolicy:
+          BucketName:
+            Fn::Sub: ${AWS::StackName}-${AWS::AccountId}-${AWS::Region}
+      Events:
+        DLQEvent:
+          Type: SQS
+          Properties:
+            Queue:
+              Fn::GetAtt:
+              - PatientCheckoutDLQ
+              - Arn
+            BatchSize: 10
+    Metadata:
+      SamResourceId: ErrorHandlingFunction

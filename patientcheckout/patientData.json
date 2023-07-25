@@ -1,0 +1,14 @@
+[
+	{
+		"firstName":"Yehuda",
+		"middleName":"Arie",
+		"lastName":"Givtovski",
+		"ssn": "123456789" 
+	},
+	{
+		"firstName":"Israel",
+		"middleName":"Meir",
+		"lastName":"Givtovski",
+		"ssn": "123456781"
+	}
+]

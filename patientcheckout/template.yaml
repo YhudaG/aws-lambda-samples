@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  patientcheckout
+
+  SAM Template for patientcheckout
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: java11
+    MemorySize: 512
+    Environment:
+      Variables:
+        PATIENT_CHECKOUT_TABLE: !Ref PatientCheckoutTable
+        PATIENT_CHECKOUT_TOPIC: !Ref PatientCheckoutTopic # !Ref - returns the resource ID
+        PATIENT_CHECKOUT_DLQ: !Ref PatientCheckoutDLQ # !Ref - returns the resource ID
+
+Resources:
+  PatientCheckoutBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-${AWS::AccountId}-${AWS::Region} # must be unique
+  PatientCheckoutTopic:
+    Type: AWS::SNS::Topic
+  PatientCheckoutDLQ: # DLQ feature in AWS Lambda is only available for triggers which are invoked asynchronously like S3, SNS, IOT etc
+    Type: AWS::SQS::Queue
+  PatientCheckoutTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Type: Number
+        Name: id
+
+  PatientCheckoutAPI:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: PatientCheckout
+      Handler: lambdaFunction.lambda.PatientCheckoutAPI::handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PatientCheckoutTable
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt PatientCheckoutTopic.TopicName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt PatientCheckoutDLQ.QueueName
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /patient-checkout
+            Method: POST
+
+  PatientCheckoutFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: PatientCheckout
+      Handler: lambdaFunction.lambda.PatientCheckoutLambda::handler
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt PatientCheckoutDLQ.Arn # !GetAtt - returns the value of an attribute from a resource in the template
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Sub ${AWS::StackName}-${AWS::AccountId}-${AWS::Region} # !Sub - substitutes variables in an input string with values that you specify
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt PatientCheckoutTopic.TopicName
+      Environment:
+        Variables:
+          JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+      Events:
+        S3Event:
+          Type: S3 # when a new file received to the s3 bucket it will trigger the lambda function
+          Properties:
+            Bucket: !Ref PatientCheckoutBucket
+            Events: s3:ObjectCreated:*
+
+  BillManagementFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: PatientCheckout
+      Handler: lambdaFunction.lambda.BillManagementLambda::handler
+      Environment:
+        Variables:
+          JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+      Events:
+        SNSEvent:
+          Type: SNS # when a new message received to the topic it will trigger the lambda function
+          Properties:
+            Topic: !Ref PatientCheckoutTopic
+
+  ErrorHandlingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: PatientCheckout
+      Handler: lambdaFunction.errorHandling.ErrorHandler::handler
+      Environment:
+        Variables:
+          JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Sub ${AWS::StackName}-${AWS::AccountId}-${AWS::Region}
+      Events:
+        DLQEvent:
+          Type: SQS # when a new message received to dead letter queue it will trigger the lambda function
+          Properties:
+            Queue: !GetAtt PatientCheckoutDLQ.Arn
+            BatchSize: 10 # mount of messages that will be received every polling
+
+# (while ref returns only a default attribute, GetAtt allows you to choose from different attributes to return.)
